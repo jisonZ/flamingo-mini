@@ -29,9 +29,10 @@ logger = logging.getLogger(__name__)
 
 
 # get images and annotations from https://cocodataset.org/#download
-COCO_ROOT      = '/nfs/data3/zhangya/coco2017/images'
-COCO_ANN_TRAIN = '/nfs/data3/hansmair/coco2017/captions_train2017.json'
-COCO_ANN_VAL   = '/nfs/data3/hansmair/coco2017/captions_val2017.json'
+COCO_ROOT_TRAIN = '/home/haochenz/flamingo-mini/train2017'
+COCO_ROOT_VAL = '/home/haochenz/flamingo-mini/val2017'
+COCO_ANN_TRAIN = '/home/haochenz/flamingo-mini/annotations/captions_train2017.json'
+COCO_ANN_VAL   = '/home/haochenz/flamingo-mini/annotations/captions_val2017.json'
 
 
 class CLIPImageTransform:
@@ -56,7 +57,7 @@ def prepare_training_dataset(config: FlamingoConfig):
         return f"{random.choice(['', ' '])}<image>{random.choice(captions)}<EOC></s>"
 
     return CocoCaptions(
-        COCO_ROOT, 
+        COCO_ROOT_TRAIN, 
         COCO_ANN_TRAIN, 
         transform=transform,
         target_transform=target_transform
@@ -64,7 +65,7 @@ def prepare_training_dataset(config: FlamingoConfig):
     
 
 def prepare_evaluation_dataset(config: FlamingoConfig):
-    return CocoCaptions(COCO_ROOT, COCO_ANN_VAL, 
+    return CocoCaptions(COCO_ROOT_VAL, COCO_ANN_VAL, 
         transform=CLIPImageTransform(config.clip_model_type))
 
 
@@ -124,9 +125,36 @@ class FlamingoTrainer(Trainer):
     
     
 if __name__ == '__main__':
-    parser = HfArgumentParser(FlamingoTrainingArguments)
-    training_args: FlamingoTrainingArguments
-    training_args = parser.parse_args_into_dataclasses()[0]
+    # parser = HfArgumentParser(FlamingoTrainingArguments)
+    # training_args: FlamingoTrainingArguments
+    # training_args = parser.parse_args_into_dataclasses()[0]
+    
+    training_args = FlamingoTrainingArguments(
+        output_dir = "./flamingo-coco",
+        run_name = "flamingo-tiny-vitL",
+        do_train = True,
+        do_eval = True,
+        optim = "adamw_torch",
+        learning_rate = 0.0001,
+        warmup_steps = 5000,
+        lr_scheduler_type = "constant_with_warmup",
+        per_device_train_batch_size = 8,
+        per_device_eval_batch_size = 64,
+        gradient_accumulation_steps = 1,
+        evaluation_strategy = "steps",
+        eval_steps = 1000,
+        save_strategy = "epoch",
+        save_total_limit = 2,
+        log_level = "info",
+        dataloader_num_workers = 8,
+        dataloader_pin_memory = True,
+        # fp16 = True,
+        report_to = "wandb",
+        ddp_find_unused_parameters = False,
+        use_ipex = True,
+        bf16 = True,
+        no_cuda = True
+    )
 
     logging.basicConfig(
         format=f'%(asctime)s {training_args.run_name} %(message)s', 
@@ -146,24 +174,41 @@ if __name__ == '__main__':
     logger.info(str(training_args))
 
     logger.info('loading model...')
+    # config = FlamingoConfig(
+    #     clip_model_type='openai/clip-vit-large-patch14',
+    #     lm='facebook/opt-125m',
+    #     dim=768,
+    #     dim_visual=1024,
+    #     xattn_act='sqrelu',
+    #     resampler_act='sqrelu'
+    # )
+
     config = FlamingoConfig(
         clip_model_type='openai/clip-vit-large-patch14',
-        lm='facebook/opt-125m',
-        dim=768,
+        lm='google/flan-t5-large',
+        dim=1024,
         dim_visual=1024,
         xattn_act='sqrelu',
         resampler_act='sqrelu'
     )
+
+
+    logger.info('initialize model...')
     model = FlamingoModel(config)
     model.train()
+    
+    exit()
 
     #################################################################
     # datasets
     #################################################################
+    
     logger.info('loading datasets...')
     train_dataset = prepare_training_dataset(config)
     eval_dataset = prepare_evaluation_dataset(config)
     
+    # print(train_dataset[0])
+    # exit()
     #################################################################
     # optimizer, scheduler, trainer
     #################################################################
@@ -178,7 +223,7 @@ if __name__ == '__main__':
         data_collator=DataCollator(config),
         # optimizers=(optimizer, scheduler)
     )
-
+    exit()
     #################################################################
     # training loop
     #################################################################

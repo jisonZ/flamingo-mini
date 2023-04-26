@@ -73,16 +73,12 @@ class FlamingoBaseModel(ABC, PreTrainedModel):
             act=config.resampler_act
         )
 
-    def _init_layers(self, lm_layers: nn.ModuleList):
-        """ 
-        call during init of the subclass.
-        careful, this method will modify the LM layers!
-        """
-        for i, lm_layer in enumerate(lm_layers):
+    def _init_T5_layers(self, encoder_layers: nn.ModuleList, decoder_layers: nn.ModuleList):
+        for i, lm_layer in enumerate(encoder_layers):
             if i % self.config.xattn_every != 0: 
                 continue
 
-            lm_layers[i] = ModifiedLMBlock(
+            encoder_layers[i] = ModifiedLMBlock(
                 lm_layer,
                 dim=self.config.dim,
                 dim_visual=self.config.dim_visual,
@@ -92,6 +88,41 @@ class FlamingoBaseModel(ABC, PreTrainedModel):
                 act=self.config.xattn_act,
                 n_visual=self.config.resampler_num_latents
             )
+
+        for i, lm_layer in enumerate(decoder_layers):
+            if i % self.config.xattn_every != 0: 
+                continue
+
+            decoder_layers[i] = ModifiedLMBlock(
+                lm_layer,
+                dim=self.config.dim,
+                dim_visual=self.config.dim_visual,
+                dim_head=self.config.xattn_dim_head,
+                heads=self.config.xattn_heads,
+                ff_mult=self.config.xattn_ff_mult,
+                act=self.config.xattn_act,
+                n_visual=self.config.resampler_num_latents
+            )
+
+    # def _init_layers(self, lm_layers: nn.ModuleList):
+    #     """ 
+    #     call during init of the subclass.
+    #     careful, this method will modify the LM layers!
+    #     """
+    #     for i, lm_layer in enumerate(lm_layers):
+    #         if i % self.config.xattn_every != 0: 
+    #             continue
+
+    #         lm_layers[i] = ModifiedLMBlock(
+    #             lm_layer,
+    #             dim=self.config.dim,
+    #             dim_visual=self.config.dim_visual,
+    #             dim_head=self.config.xattn_dim_head,
+    #             heads=self.config.xattn_heads,
+    #             ff_mult=self.config.xattn_ff_mult,
+    #             act=self.config.xattn_act,
+    #             n_visual=self.config.resampler_num_latents
+    #         )
             
     @abstractmethod
     def get_modified_layers(self) -> List[ModifiedLMBlock]:
@@ -113,6 +144,8 @@ class FlamingoBaseModel(ABC, PreTrainedModel):
 
         # lm_head shares weights with the embeddings so no need to unfreeze that as well
         self.lm.get_input_embeddings().weight.requires_grad = True
+        self.lm_encoder.get_input_embeddings().weight.requires_grad = True
+        self.lm_decoder.get_input_embeddings().weight.requires_grad = True
 
         for xattn in self.get_modified_layers():
             for param in xattn.xattn_block.parameters():
@@ -305,55 +338,80 @@ class FlamingoBaseModel(ABC, PreTrainedModel):
             attentions=out.attentions,
         )
 
-
-class FlamingoGPT2(FlamingoBaseModel):
+class FlamingoFLAN(FlamingoBaseModel):
     config: FlamingoConfig
     config_class = FlamingoConfig
 
     def __init__(self, config: FlamingoConfig):
-        from transformers import GPT2LMHeadModel, GPT2Model
-        assert config.lm.startswith('gpt')
+        from transformers import AutoModelForSeq2SeqLM
+        assert config.lm.startswith('google/flan-t5')
         super().__init__(config)
 
-        base_lm: GPT2LMHeadModel = GPT2LMHeadModel.from_pretrained(config.lm)  # type: ignore
+        base_lm: AutoModelForSeq2SeqLM = AutoModelForSeq2SeqLM.from_pretrained(config.lm)  # type: ignore
         
-        assert self.config.dim == base_lm.config.n_embd, \
-            f"specified {self.config.dim=} in FlamingoConfig, but {config.lm} has hidden size={base_lm.config.n_embd}"
-
-        base_lm.resize_token_embeddings(base_lm.config.vocab_size + 1)
-        self.lm: GPT2Model = base_lm.transformer
-        self.lm_head = base_lm.lm_head
-        self._init_layers(self.lm.h)
-        
-    def get_modified_layers(self):
-        if self.config.xattn_every == 1:
-            return self.lm.h
-        return filter(lambda layer: isinstance(layer, ModifiedLMBlock), self.lm.h)
-
-
-class FlamingoOPT(FlamingoBaseModel):
-    config: FlamingoConfig
-    config_class = FlamingoConfig
-
-    def __init__(self, config: FlamingoConfig):
-        from transformers import OPTForCausalLM, OPTModel
-        assert config.lm.startswith('facebook/opt')
-        super().__init__(config)
-
-        base_lm: OPTForCausalLM = OPTForCausalLM.from_pretrained(config.lm)  # type: ignore
-
         assert self.config.dim == base_lm.config.hidden_size, \
             f"specified {self.config.dim=} in FlamingoConfig, but {config.lm} has hidden size={base_lm.config.hidden_size}"
 
         base_lm.resize_token_embeddings(base_lm.config.vocab_size + 1)
-        self.lm: OPTModel = base_lm.model
+        self.lm = base_lm
+        self.lm_encoder = base_lm.encoder
+        self.lm_decoder = base_lm.decoder
         self.lm_head = base_lm.lm_head
-        self._init_layers(self.lm.decoder.layers)
+        self._init_T5_layers(self.lm_encoder.block, self.lm_decoder.block)
         
     def get_modified_layers(self):
         if self.config.xattn_every == 1:
-            return self.lm.decoder.layers
-        return filter(lambda layer: isinstance(layer, ModifiedLMBlock), self.lm.decoder.layers)
+            return self.lm_encoder.block + self.lm_decoder.block
+        return filter(lambda layer: isinstance(layer, ModifiedLMBlock), self.lm_encoder.block) + filter(lambda layer: isinstance(layer, ModifiedLMBlock), self.lm_decoder.block)
+    
+# class FlamingoGPT2(FlamingoBaseModel):
+#     config: FlamingoConfig
+#     config_class = FlamingoConfig
+
+#     def __init__(self, config: FlamingoConfig):
+#         from transformers import GPT2LMHeadModel, GPT2Model
+#         assert config.lm.startswith('gpt')
+#         super().__init__(config)
+
+#         base_lm: GPT2LMHeadModel = GPT2LMHeadModel.from_pretrained(config.lm)  # type: ignore
+        
+#         assert self.config.dim == base_lm.config.n_embd, \
+#             f"specified {self.config.dim=} in FlamingoConfig, but {config.lm} has hidden size={base_lm.config.n_embd}"
+
+#         base_lm.resize_token_embeddings(base_lm.config.vocab_size + 1)
+#         self.lm: GPT2Model = base_lm.transformer
+#         self.lm_head = base_lm.lm_head
+#         self._init_layers(self.lm.h)
+        
+#     def get_modified_layers(self):
+#         if self.config.xattn_every == 1:
+#             return self.lm.h
+#         return filter(lambda layer: isinstance(layer, ModifiedLMBlock), self.lm.h)
+
+
+# class FlamingoOPT(FlamingoBaseModel):
+#     config: FlamingoConfig
+#     config_class = FlamingoConfig
+
+#     def __init__(self, config: FlamingoConfig):
+#         from transformers import AutoModelForSeq2SeqLM
+#         assert config.lm.startswith('facebook/opt')
+#         super().__init__(config)
+
+#         base_lm: OPTForCausalLM = OPTForCausalLM.from_pretrained(config.lm)  # type: ignore
+
+#         assert self.config.dim == base_lm.config.hidden_size, \
+#             f"specified {self.config.dim=} in FlamingoConfig, but {config.lm} has hidden size={base_lm.config.hidden_size}"
+
+#         base_lm.resize_token_embeddings(base_lm.config.vocab_size + 1)
+#         self.lm: OPTModel = base_lm.model
+#         self.lm_head = base_lm.lm_head
+#         self._init_layers(self.lm.decoder.layers)
+        
+#     def get_modified_layers(self):
+#         if self.config.xattn_every == 1:
+#             return self.lm.decoder.layers
+#         return filter(lambda layer: isinstance(layer, ModifiedLMBlock), self.lm.decoder.layers)
 
 
 class FlamingoModel(PreTrainedModel):
@@ -369,8 +427,9 @@ class FlamingoModel(PreTrainedModel):
     # key = prefix of an existing pretrained huggingface transformer language model
     # value = Flamingo class for the respective language model
     _LANGUAGE_MODEL_VERSIONS = {
-        'gpt2': FlamingoGPT2,
-        'facebook/opt': FlamingoOPT
+        # 'gpt2': FlamingoGPT2,
+        # 'facebook/opt': FlamingoOPT,
+        'google/flan-t5': FlamingoFLAN
     }
     
     _keys_to_ignore_on_load_missing = [r"flamingo.vision_encoder"]
@@ -386,7 +445,7 @@ class FlamingoModel(PreTrainedModel):
                 If none, it will choose FlamingoGPT2 or FlamingoOPT based on the FlamingoConfig. Defaults to None.
         """
         super().__init__(config)
-
+        
         if model_class is None:
             model_class = self._find_flamingo_class(config.lm)
         self.flamingo: FlamingoBaseModel = model_class(config)

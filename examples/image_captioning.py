@@ -4,7 +4,8 @@ from flamingo_mini.utils import load_url
 
 
 print('preparing model...')
-device = torch.device('cuda:3' if torch.cuda.is_available() else 'cpu')
+# device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cpu')
 model = FlamingoModel.from_pretrained('dhansmair/flamingo-mini')
 model.to(device)
 model.eval()
