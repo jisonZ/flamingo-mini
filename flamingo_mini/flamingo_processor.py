@@ -45,7 +45,11 @@ class FlamingoProcessor:
             from transformers import AutoTokenizer
             
             self.tokenizer = AutoTokenizer.from_pretrained('facebook/opt-30b', use_fast=use_fast)
-        
+        elif config.lm.startswith('google/flan-t5'):
+            from transformers import AutoTokenizer
+            
+            self.tokenizer = AutoTokenizer.from_pretrained('google/flan-t5-large', use_fast=use_fast)
+
         self.tokenizer.add_bos_token = True
         self.tokenizer.pad_token = self.tokenizer.eos_token
         self.tokenizer.add_tokens(self.eoc_token)
