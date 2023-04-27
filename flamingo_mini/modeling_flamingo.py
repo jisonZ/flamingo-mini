@@ -308,7 +308,9 @@ class FlamingoBaseModel(ABC, PreTrainedModel):
             return_dict=True,
             **kwargs
         )
-
+        
+        print("LOG: decoder_hidden_states")
+        print(out.decoder_hidden_states)
         logits: torch.Tensor = self.lm_head(out.decoder_hidden_states)
 
         # collect the past_key_values from the xattn layers
