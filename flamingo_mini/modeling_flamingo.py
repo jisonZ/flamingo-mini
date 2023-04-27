@@ -73,12 +73,12 @@ class FlamingoBaseModel(ABC, PreTrainedModel):
             act=config.resampler_act
         )
 
-    def _init_T5_layers(self, encoder_layers: nn.ModuleList, decoder_layers: nn.ModuleList):
-        for i, lm_layer in enumerate(encoder_layers):
+    def _init_T5_layers(self, lm_layers):
+        for i, lm_layer in enumerate(lm_layers.encoder):
             if i % self.config.xattn_every != 0: 
                 continue
 
-            encoder_layers[i] = ModifiedLMBlock(
+            lm_layer[i] = ModifiedLMBlock(
                 lm_layer,
                 dim=self.config.dim,
                 dim_visual=self.config.dim_visual,
@@ -89,11 +89,11 @@ class FlamingoBaseModel(ABC, PreTrainedModel):
                 n_visual=self.config.resampler_num_latents
             )
 
-        for i, lm_layer in enumerate(decoder_layers):
+        for i, lm_layer in enumerate(lm_layers.encoder.decoder):
             if i % self.config.xattn_every != 0: 
                 continue
 
-            decoder_layers[i] = ModifiedLMBlock(
+            lm_layer[i] = ModifiedLMBlock(
                 lm_layer,
                 dim=self.config.dim,
                 dim_visual=self.config.dim_visual,
@@ -357,7 +357,7 @@ class FlamingoFLAN(FlamingoBaseModel):
         self.lm_encoder = base_lm.encoder
         self.lm_decoder = base_lm.decoder
         self.lm_head = base_lm.lm_head
-        self._init_T5_layers(self.lm_encoder.block, self.lm_decoder.block)
+        self._init_T5_layers(self.lm)
         
     def get_modified_layers(self):
         if self.config.xattn_every == 1:
