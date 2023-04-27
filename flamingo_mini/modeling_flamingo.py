@@ -227,6 +227,7 @@ class FlamingoBaseModel(ABC, PreTrainedModel):
         return_dict: bool = True,
         labels: torch.Tensor | None = None,
         loss_reduction: str = 'mean',
+        decoder_input_ids: torch.Tensor | None = None,
         **kwargs
     ) -> CausalLMOutputWithPast:
         """Flamingo forward pass
@@ -300,6 +301,7 @@ class FlamingoBaseModel(ABC, PreTrainedModel):
         # pass through LM
         out: BaseModelOutputWithPast = self.lm(
             input_ids=input_ids,
+            decoder_input_ids = decoder_input_ids,
             attention_mask=attention_mask,
             head_mask=head_mask,
             inputs_embeds=inputs_embeds,
@@ -501,6 +503,7 @@ class FlamingoModel(PreTrainedModel):
         return_dict: bool = True,
         labels: torch.Tensor | None = None,
         loss_reduction: str = 'mean',
+        decoder_input_ids: torch.Tensor | None = None,
         **kwargs
     ) -> CausalLMOutputWithPast:
 
@@ -517,6 +520,7 @@ class FlamingoModel(PreTrainedModel):
             return_dict=return_dict,
             labels=labels,
             loss_reduction=loss_reduction,
+            decoder_input_ids=decoder_input_ids,
             **kwargs
         )
 
