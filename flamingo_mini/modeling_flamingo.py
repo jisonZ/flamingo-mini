@@ -74,11 +74,11 @@ class FlamingoBaseModel(ABC, PreTrainedModel):
         )
 
     def _init_T5_layers(self, lm_layers):
-        for i, lm_layer in enumerate(lm_layers.encoder):
+        for i, lm_layer in enumerate(lm_layers.encoder.block):
             if i % self.config.xattn_every != 0: 
                 continue
 
-            lm_layer[i] = ModifiedLMBlock(
+            lm_layers.encoder.block[i] = ModifiedLMBlock(
                 lm_layer,
                 dim=self.config.dim,
                 dim_visual=self.config.dim_visual,
@@ -89,11 +89,11 @@ class FlamingoBaseModel(ABC, PreTrainedModel):
                 n_visual=self.config.resampler_num_latents
             )
 
-        for i, lm_layer in enumerate(lm_layers.encoder.decoder):
+        for i, lm_layer in enumerate(lm_layers.decoder.block):
             if i % self.config.xattn_every != 0: 
                 continue
 
-            lm_layer[i] = ModifiedLMBlock(
+            lm_layers.decoder.block[i] = ModifiedLMBlock(
                 lm_layer,
                 dim=self.config.dim,
                 dim_visual=self.config.dim_visual,
@@ -144,8 +144,8 @@ class FlamingoBaseModel(ABC, PreTrainedModel):
 
         # lm_head shares weights with the embeddings so no need to unfreeze that as well
         self.lm.get_input_embeddings().weight.requires_grad = True
-        self.lm_encoder.get_input_embeddings().weight.requires_grad = True
-        self.lm_decoder.get_input_embeddings().weight.requires_grad = True
+        self.lm.encoder.get_input_embeddings().weight.requires_grad = True
+        self.lm.decoder.get_input_embeddings().weight.requires_grad = True
 
         for xattn in self.get_modified_layers():
             for param in xattn.xattn_block.parameters():
@@ -354,15 +354,13 @@ class FlamingoFLAN(FlamingoBaseModel):
 
         base_lm.resize_token_embeddings(base_lm.config.vocab_size + 1)
         self.lm = base_lm
-        self.lm_encoder = base_lm.encoder
-        self.lm_decoder = base_lm.decoder
         self.lm_head = base_lm.lm_head
         self._init_T5_layers(self.lm)
         
     def get_modified_layers(self):
         if self.config.xattn_every == 1:
-            return self.lm_encoder.block + self.lm_decoder.block
-        return filter(lambda layer: isinstance(layer, ModifiedLMBlock), self.lm_encoder.block) + filter(lambda layer: isinstance(layer, ModifiedLMBlock), self.lm_decoder.block)
+            return self.lm.encoder.block + self.lm.decoder.block
+        return filter(lambda layer: isinstance(layer, ModifiedLMBlock), self.lm.encoder.block) + filter(lambda layer: isinstance(layer, ModifiedLMBlock), self.lm.decoder.block)
     
 # class FlamingoGPT2(FlamingoBaseModel):
 #     config: FlamingoConfig

@@ -139,3 +139,6 @@ train2017/
 val2017/
 train2014/
 *.json
+*.csv
+*.txt
+images/

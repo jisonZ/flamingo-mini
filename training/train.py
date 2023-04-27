@@ -77,10 +77,11 @@ class DataCollator:
         pixel_values, sentences = zip(*batch)
         inputs = self.processor(text=sentences)
         pixel_values = torch.stack(pixel_values)
-        
+
         return dict(
             pixel_values=pixel_values,
             labels=inputs['input_ids'],
+            decoder_input_ids = inputs['input_ids'],
             **inputs
         )
 
@@ -152,7 +153,7 @@ if __name__ == '__main__':
         report_to = "wandb",
         ddp_find_unused_parameters = False,
         use_ipex = True,
-        bf16 = True,
+        # bf16 = True,
         no_cuda = True
     )
 
@@ -196,19 +197,15 @@ if __name__ == '__main__':
     logger.info('initialize model...')
     model = FlamingoModel(config)
     model.train()
-    
-    exit()
-
+    print(model)
     #################################################################
     # datasets
     #################################################################
-    
+
     logger.info('loading datasets...')
     train_dataset = prepare_training_dataset(config)
     eval_dataset = prepare_evaluation_dataset(config)
-    
-    # print(train_dataset[0])
-    # exit()
+
     #################################################################
     # optimizer, scheduler, trainer
     #################################################################
@@ -223,7 +220,6 @@ if __name__ == '__main__':
         data_collator=DataCollator(config),
         # optimizers=(optimizer, scheduler)
     )
-    exit()
     #################################################################
     # training loop
     #################################################################
